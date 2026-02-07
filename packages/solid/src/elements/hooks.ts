@@ -1,6 +1,8 @@
 import {
   engine,
+  FocusScopeRenderable,
   PasteEvent,
+  Renderable,
   Selection,
   Timeline,
   type CliRenderer,
@@ -49,42 +51,38 @@ export const useTerminalDimensions = () => {
   return terminalDimensions
 }
 
+// ── Scope detection ──────────────────────────────────────────────────
+
+function closestFocusScope(node: Renderable): FocusScopeRenderable | null {
+  let current: Renderable | null = node.parent
+  while (current) {
+    if (current instanceof FocusScopeRenderable) return current
+    current = current.parent
+  }
+  return null
+}
+
+// ── Keyboard hooks ───────────────────────────────────────────────────
+
 export interface UseKeyboardOptions {
   /** Include release events - callback receives events with eventType: "release" */
   release?: boolean
+  /** Ref to a renderable inside a focus scope. Enables scope-aware dispatch. */
+  ref?: () => Renderable
 }
 
-/**
- * Subscribe to keyboard events.
- *
- * By default, only receives press events (including key repeats with `repeated: true`).
- * Use `options.release` to also receive release events.
- *
- * @example
- * // Basic press handling (includes repeats)
- * useKeyboard((e) => console.log(e.name, e.repeated ? "(repeat)" : ""))
- *
- * // With release events
- * useKeyboard((e) => {
- *   if (e.eventType === "release") keys.delete(e.name)
- *   else keys.add(e.name)
- * }, { release: true })
- */
 export const useKeyboard = (callback: (key: KeyEvent) => void, options?: UseKeyboardOptions) => {
   const renderer = useRenderer()
-  const keyHandler = renderer.keyInput
-  onMount(() => {
-    keyHandler.on("keypress", callback)
-    if (options?.release) {
-      keyHandler.on("keyrelease", callback)
-    }
-  })
 
-  onCleanup(() => {
-    keyHandler.off("keypress", callback)
-    if (options?.release) {
-      keyHandler.off("keyrelease", callback)
-    }
+  onMount(() => {
+    const target = (options?.ref ? closestFocusScope(options.ref()) : null) ?? renderer.keyInput
+    target.on("keypress", callback)
+    if (options?.release) target.on("keyrelease", callback)
+
+    onCleanup(() => {
+      target.off("keypress", callback)
+      if (options?.release) target.off("keyrelease", callback)
+    })
   })
 }
 

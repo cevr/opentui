@@ -3,6 +3,7 @@ import {
   BoxRenderable,
   CodeRenderable,
   DiffRenderable,
+  FocusScopeRenderable,
   InputRenderable,
   LineNumberRenderable,
   MarkdownRenderable,
@@ -104,6 +105,7 @@ export const baseComponents = {
   diff: DiffRenderable,
   line_number: LineNumberRenderable,
   markdown: MarkdownRenderable,
+  focus_scope: FocusScopeRenderable,
 
   span: SpanRenderable,
   strong: BoldSpanRenderable,

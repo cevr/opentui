@@ -4,6 +4,7 @@ import type {
   BoxProps,
   CodeProps,
   ExtendedIntrinsicElements,
+  FocusScopeProps,
   InputProps,
   LinkProps,
   MarkdownProps,
@@ -35,6 +36,7 @@ declare namespace JSX {
     code: CodeProps
     textarea: TextareaProps
     markdown: MarkdownProps
+    focus_scope: FocusScopeProps
 
     b: SpanProps
     strong: SpanProps
