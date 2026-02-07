@@ -3,6 +3,7 @@ import {
   BoxRenderable,
   CodeRenderable,
   DiffRenderable,
+  FocusScopeRenderable,
   InputRenderable,
   LineNumberRenderable,
   MarkdownRenderable,
@@ -35,6 +36,7 @@ export const baseComponents = {
   "ascii-font": ASCIIFontRenderable,
   "tab-select": TabSelectRenderable,
   "line-number": LineNumberRenderable,
+  "focus-scope": FocusScopeRenderable,
 
   // Text modifiers
   span: SpanRenderable,

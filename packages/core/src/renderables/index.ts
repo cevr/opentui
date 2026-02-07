@@ -1,5 +1,6 @@
 export * from "./ASCIIFont"
 export * from "./Box"
+export * from "./FocusScope"
 export * from "./Code"
 export * from "./composition/constructs"
 export * from "./composition/VRenderable"

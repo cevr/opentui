@@ -5,6 +5,7 @@ import type {
   CodeProps,
   DiffProps,
   ExtendedIntrinsicElements,
+  FocusScopeProps,
   InputProps,
   LineBreakProps,
   LineNumberProps,
@@ -50,6 +51,7 @@ export namespace JSX {
     "ascii-font": AsciiFontProps
     "tab-select": TabSelectProps
     "line-number": LineNumberProps
+    "focus-scope": FocusScopeProps
     // Text modifiers
     b: SpanProps
     i: SpanProps

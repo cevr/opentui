@@ -8,6 +8,8 @@ import type {
   CodeRenderable,
   DiffRenderable,
   DiffRenderableOptions,
+  FocusScopeOptions,
+  FocusScopeRenderable,
   InputRenderable,
   InputRenderableOptions,
   LineNumberOptions,
@@ -173,6 +175,8 @@ export type TabSelectProps = ComponentProps<TabSelectRenderableOptions, TabSelec
 export type LineNumberProps = ComponentProps<ContainerProps<LineNumberOptions>, LineNumberRenderable> & {
   focused?: boolean
 }
+
+export type FocusScopeProps = ComponentProps<ContainerProps<FocusScopeOptions>, FocusScopeRenderable>
 
 // ============================================================================
 // Extended/Dynamic Component System
