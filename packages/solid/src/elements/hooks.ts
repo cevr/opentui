@@ -132,3 +132,68 @@ export const useTimeline = (options: TimelineOptions = {}): Timeline => {
 
   return timeline
 }
+
+// ── Hotkey ────────────────────────────────────────────────────────────
+
+interface ParsedCombo {
+  key: string
+  ctrl: boolean
+  shift: boolean
+  meta: boolean // meta/alt/option are treated as the same modifier
+}
+
+function parseCombo(combo: string): ParsedCombo {
+  const parts = combo.toLowerCase().split("+")
+  const key = parts.pop()!
+  return {
+    key,
+    ctrl: parts.includes("ctrl"),
+    shift: parts.includes("shift"),
+    meta: parts.includes("meta") || parts.includes("alt"),
+  }
+}
+
+// Normalize key names so combos work regardless of parser output.
+// e.g. "space" matches both "space" and " "
+const keyAliases: Record<string, string[]> = {
+  space: ["space", " "],
+}
+
+function matchesCombo(event: KeyEvent, parsed: ParsedCombo): boolean {
+  const aliases = keyAliases[parsed.key]
+  const keyMatches = aliases ? aliases.includes(event.name) : event.name === parsed.key
+  if (!keyMatches) return false
+  if (parsed.ctrl !== event.ctrl) return false
+  if (parsed.shift !== event.shift) return false
+  if (parsed.meta !== event.meta) return false
+  return true
+}
+
+export interface UseHotkeyOptions {
+  when?: () => boolean
+  /** Ref to a renderable inside a focus scope. Enables scope-aware dispatch. */
+  ref?: () => Renderable
+}
+
+/**
+ * Declarative hotkey binding.
+ *
+ * Pass `ref` to make it scope-aware (see `useKeyboard`).
+ *
+ * @example
+ * useHotkey('ctrl+p', () => openCommandPalette())
+ * useHotkey('j', () => scrollDown(), { ref: () => boxRef, when: () => !isEditing() })
+ */
+export const useHotkey = (combo: string, handler: () => void, options?: UseHotkeyOptions) => {
+  const parsed = parseCombo(combo)
+
+  useKeyboard(
+    (key) => {
+      if (options?.when && !options.when()) return
+      if (matchesCombo(key, parsed)) {
+        handler()
+      }
+    },
+    { ref: options?.ref },
+  )
+}
