@@ -1,282 +1,299 @@
-import { test, expect } from "bun:test"
-import { InternalKeyHandler, KeyEvent } from "./KeyHandler"
+import { test, expect, beforeEach, afterEach } from "bun:test"
+import { KeyEvent } from "./KeyHandler"
+import { createTestRenderer, type TestRenderer } from "../testing/test-renderer"
+import { Renderable, type RenderableOptions } from "../Renderable"
+import type { RenderContext } from "../types"
 
 /**
- * Integration tests demonstrating real-world scenarios with stopPropagation
+ * Integration tests demonstrating real-world scenarios with the
+ * DOM-like capture/bubble event dispatch model.
  */
 
-function createKeyHandler(): InternalKeyHandler {
-  return new InternalKeyHandler()
+class TestRenderable extends Renderable {
+  _focusable = true
+  constructor(ctx: RenderContext, options: RenderableOptions) {
+    super(ctx, options)
+  }
 }
 
-test("Integration - Modal ESC handler prevents subsequent handlers", () => {
-  const handler = createKeyHandler()
+let renderer: TestRenderer
+let renderOnce: () => Promise<void>
 
-  let modalOpen = true
-  let modalHandledEsc = false
+beforeEach(async () => {
+  ;({ renderer, renderOnce } = await createTestRenderer({}))
+})
+
+afterEach(() => {
+  renderer.destroy()
+})
+
+function pressKey(key: string = "a") {
+  ;(renderer as any)._keyHandler.processInput(key)
+}
+
+test("Integration - Modal scope captures ESC and prevents parent handlers", async () => {
+  const modal = new TestRenderable(renderer, { id: "modal", width: 30, height: 15 })
+  renderer.root.add(modal)
+
+  const modalInput = new TestRenderable(renderer, { id: "modal-input", width: 20, height: 3 })
+  modal.add(modalInput)
+  await renderOnce()
+  modalInput.focus()
+
+  let modalClosed = false
   let backgroundHandledEsc = false
 
-  // Modal ESC handler (registered first, so it runs first)
-  handler.on("keypress", (key: KeyEvent) => {
-    if (key.name === "escape" && modalOpen) {
-      modalHandledEsc = true
-      modalOpen = false
-      key.stopPropagation() // Stop other handlers from running
+  // Modal catches ESC on bubble, stops it from reaching root
+  modal.addEventListener("keypress", (event) => {
+    if ((event as KeyEvent).name === "escape") {
+      modalClosed = true
+      event.stopPropagation()
     }
   })
 
-  // Background/app-level ESC handler (registered second, should not run)
-  handler.on("keypress", (key: KeyEvent) => {
-    if (key.name === "escape") {
+  // Background/app-level handler on root (bubble) — should not run
+  renderer.root.addEventListener("keypress", (event) => {
+    if ((event as KeyEvent).name === "escape") {
       backgroundHandledEsc = true
     }
   })
 
-  // Simulate ESC key press while modal is open
-  handler.processInput("\x1b")
+  pressKey("\x1b") // ESC
 
-  expect(modalOpen).toBe(false)
-  expect(modalHandledEsc).toBe(true)
-  expect(backgroundHandledEsc).toBe(false) // Modal stopped propagation
+  expect(modalClosed).toBe(true)
+  expect(backgroundHandledEsc).toBe(false)
 })
 
-test("Integration - Focused input field handles key, stops parent handlers", () => {
-  const handler = createKeyHandler()
+test("Integration - Focused input field handles key, parent sees it in capture", async () => {
+  const container = new TestRenderable(renderer, { id: "container", width: 30, height: 15 })
+  renderer.root.add(container)
+
+  const input = new TestRenderable(renderer, { id: "input", width: 20, height: 3 })
+  container.add(input)
+  await renderOnce()
+  input.focus()
 
   const inputValue: string[] = []
-  let parentHandledKey = false
+  let parentSawKey = false
 
-  // Parent container handler
-  handler.on("keypress", (key: KeyEvent) => {
-    if (!key.propagationStopped) {
-      parentHandledKey = true
-    }
+  // Parent sees event in capture phase (before input)
+  container.addEventListener(
+    "keypress",
+    () => {
+      parentSawKey = true
+    },
+    { capture: true },
+  )
+
+  // Input handles key in bubble phase
+  input.addEventListener("keypress", (event) => {
+    const key = event as KeyEvent
+    inputValue.push(key.name)
   })
 
-  // Focused input field handler (internal/renderable)
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    if (key.name === "a" || key.name === "b" || key.name === "c") {
-      inputValue.push(key.name)
-      key.stopPropagation() // Input consumed the key
-    }
-  })
-
-  // Type some keys
-  handler.processInput("a")
-  handler.processInput("b")
-  handler.processInput("c")
+  pressKey("a")
+  pressKey("b")
+  pressKey("c")
 
   expect(inputValue).toEqual(["a", "b", "c"])
-  expect(parentHandledKey).toBe(true) // Parent ran first (global priority)
-
-  // But internal handler got to consume the keys and stop propagation
-  // doesn't prevent parent from seeing them first (global runs before internal)
+  expect(parentSawKey).toBe(true)
 })
 
-test("Integration - Dialog system with priority: innermost modal wins", () => {
-  const handler = createKeyHandler()
+test("Integration - Dialog system: innermost scope wins via bubble order", async () => {
+  const outerModal = new TestRenderable(renderer, { id: "outer-modal", width: 40, height: 20 })
+  renderer.root.add(outerModal)
+
+  const innerModal = new TestRenderable(renderer, { id: "inner-modal", width: 30, height: 15 })
+  outerModal.add(innerModal)
+
+  const innerInput = new TestRenderable(renderer, { id: "inner-input", width: 20, height: 3 })
+  innerModal.add(innerInput)
+  await renderOnce()
+  innerInput.focus()
 
   let outerModalClosed = false
   let innerModalClosed = false
   const closeLog: string[] = []
 
-  // Outer modal ESC handler
-  const outerHandler = (key: KeyEvent) => {
-    if (key.name === "escape" && !key.propagationStopped) {
-      closeLog.push("outer")
-      outerModalClosed = true
-      key.stopPropagation()
-    }
-  }
-
-  // Inner modal ESC handler (registered later, so it comes first in listener order)
-  const innerHandler = (key: KeyEvent) => {
-    if (key.name === "escape") {
+  // Inner modal catches ESC first (closer to target in bubble phase)
+  innerModal.addEventListener("keypress", (event) => {
+    if ((event as KeyEvent).name === "escape") {
       closeLog.push("inner")
       innerModalClosed = true
-      key.stopPropagation()
+      event.stopPropagation()
     }
-  }
+  })
 
-  // Register outer first
-  handler.on("keypress", outerHandler)
+  // Outer modal ESC handler — should not run due to stopPropagation
+  outerModal.addEventListener("keypress", (event) => {
+    if ((event as KeyEvent).name === "escape") {
+      closeLog.push("outer")
+      outerModalClosed = true
+    }
+  })
 
-  // Then inner (but we want inner to handle first)
-  // In a real app, we'd use prependInputHandler or similar
-  // For now, let's simulate by removing outer and re-adding in correct order
-  handler.removeListener("keypress", outerHandler)
-  handler.on("keypress", innerHandler)
-  handler.on("keypress", outerHandler)
-
-  // Press ESC
-  handler.processInput("\x1b")
+  pressKey("\x1b") // ESC
 
   expect(closeLog).toEqual(["inner"])
   expect(innerModalClosed).toBe(true)
-  expect(outerModalClosed).toBe(false) // Inner stopped propagation
+  expect(outerModalClosed).toBe(false)
 })
 
-test("Integration - Keyboard shortcut system with priorities", () => {
-  const handler = createKeyHandler()
+test("Integration - Global shortcut (capture) always fires before scope isolation", async () => {
+  const scope = new TestRenderable(renderer, { id: "scope", width: 30, height: 15 })
+  renderer.root.add(scope)
+
+  const input = new TestRenderable(renderer, { id: "input", width: 20, height: 3 })
+  scope.add(input)
+  await renderOnce()
+  input.focus()
 
   const actions: string[] = []
 
-  // Global shortcuts (Ctrl+S = Save, Ctrl+O = Open)
-  handler.on("keypress", (key: KeyEvent) => {
-    if (key.ctrl && key.name === "s") {
-      actions.push("save")
-      // Don't stop propagation - allow other handlers to see it
-    }
-    if (key.ctrl && key.name === "o") {
-      actions.push("open")
+  // Global Ctrl+C handler (capture on root — always fires first)
+  renderer.keyInput.on("keypress", (key: KeyEvent) => {
+    if (key.ctrl && key.name === "c") {
+      actions.push("global-exit")
     }
   })
 
-  // Text editor overrides Ctrl+S when focused
-  let editorFocused = true
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    if (editorFocused && key.ctrl && key.name === "s") {
-      actions.push("save-document")
-      key.stopPropagation() // Override global save
-    }
+  // Scope isolation (bubble phase)
+  scope.addEventListener("keypress", (event) => {
+    actions.push("scope-isolate")
+    event.stopPropagation()
   })
 
-  // Ctrl+S with editor focused
-  handler.processInput("\x13") // Ctrl+S
+  pressKey("\x03") // Ctrl+C
 
-  expect(actions).toEqual(["save", "save-document"])
-  // Note: global runs first, then internal. To truly override,
-  // the editor would need to be a global handler registered first
+  // Global capture fires first, then scope isolation stops bubble
+  expect(actions).toEqual(["global-exit", "scope-isolate"])
+
+  renderer.keyInput.removeAllListeners("keypress")
 })
 
-test("Integration - preventDefault vs stopPropagation behavior", () => {
-  const handler = createKeyHandler()
+test("Integration - preventDefault vs stopPropagation are independent", async () => {
+  const parent = new TestRenderable(renderer, { id: "parent", width: 20, height: 10 })
+  renderer.root.add(parent)
+
+  const child = new TestRenderable(renderer, { id: "child", width: 10, height: 5 })
+  parent.add(child)
+  await renderOnce()
+  child.focus()
 
   const log: string[] = []
 
-  // Handler 1: preventDefault only
-  handler.on("keypress", (key: KeyEvent) => {
-    if (key.name === "a") {
-      log.push("handler1-saw-a")
-      key.preventDefault()
+  // Child: preventDefault only (does NOT stop propagation)
+  child.addEventListener("keypress", (event) => {
+    log.push("child")
+    event.preventDefault()
+  })
+
+  // Parent bubble: should still run (preventDefault doesn't stop propagation)
+  parent.addEventListener("keypress", (event) => {
+    log.push("parent")
+    if (event.defaultPrevented) {
+      log.push("parent-saw-prevented")
     }
   })
 
-  // Handler 2: Should still run (preventDefault doesn't stop global handlers)
-  handler.on("keypress", (key: KeyEvent) => {
-    if (key.name === "a") {
-      log.push("handler2-saw-a")
-      if (key.defaultPrevented) {
-        log.push("handler2-saw-prevented")
-      }
-    }
-  })
+  pressKey()
 
-  // Handler 3: Internal handler should not run (preventDefault stops internal)
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    if (key.name === "a") {
-      log.push("handler3-internal-saw-a")
-    }
-  })
-
-  handler.processInput("a")
-
-  expect(log).toEqual([
-    "handler1-saw-a",
-    "handler2-saw-a",
-    "handler2-saw-prevented",
-    // handler3 doesn't run because preventDefault stops internal handlers
-  ])
-
-  // Now test with stopPropagation
-  log.length = 0
-
-  handler.removeAllListeners("keypress")
-
-  handler.on("keypress", (key: KeyEvent) => {
-    if (key.name === "b") {
-      log.push("handler1-saw-b")
-      key.stopPropagation()
-    }
-  })
-
-  handler.on("keypress", (key: KeyEvent) => {
-    if (key.name === "b") {
-      log.push("handler2-saw-b")
-    }
-  })
-
-  handler.processInput("b")
-
-  expect(log).toEqual([
-    "handler1-saw-b",
-    // handler2 doesn't run because stopPropagation stops all subsequent handlers
-  ])
+  expect(log).toEqual(["child", "parent", "parent-saw-prevented"])
 })
 
-test("Integration - Form submission with Enter key", () => {
-  const handler = createKeyHandler()
+test("Integration - Form submission: input consumes Enter, form doesn't see it", async () => {
+  const form = new TestRenderable(renderer, { id: "form", width: 30, height: 15 })
+  renderer.root.add(form)
+
+  const input = new TestRenderable(renderer, { id: "input", width: 20, height: 3 })
+  form.add(input)
+  await renderOnce()
+  input.focus()
 
   let formSubmitted = false
   let inputValue = ""
 
-  // Form's Enter handler
-  handler.on("keypress", (key: KeyEvent) => {
-    if (key.name === "return" && !key.propagationStopped) {
+  // Input handles Enter and stops propagation
+  input.addEventListener("keypress", (event) => {
+    if ((event as KeyEvent).name === "return") {
+      inputValue += "\n"
+      event.stopPropagation()
+    }
+  })
+
+  // Form listens for Enter to submit (bubble) — should not run
+  form.addEventListener("keypress", (event) => {
+    if ((event as KeyEvent).name === "return") {
       formSubmitted = true
     }
   })
 
-  // Input field's Enter handler
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    if (key.name === "return") {
-      // Multi-line input: add newline and stop propagation
-      inputValue += "\n"
-      key.stopPropagation()
-    }
-  })
-
-  // Press Enter
-  handler.processInput("\r")
+  pressKey("\r") // Enter
 
   expect(inputValue).toBe("\n")
-  expect(formSubmitted).toBe(true) // Global handler ran first
-
-  // In a real app, you'd check defaultPrevented in the form handler
-  // or the input would be registered as a global handler first
+  expect(formSubmitted).toBe(false)
 })
 
-test("Integration - Event bubbling with multiple nested components", () => {
-  const handler = createKeyHandler()
+test("Integration - Event bubbling with multiple nested components", async () => {
+  const container = new TestRenderable(renderer, { id: "container", width: 40, height: 20 })
+  renderer.root.add(container)
 
-  const eventLog: Array<{ component: string; stopped: boolean }> = []
+  const panel = new TestRenderable(renderer, { id: "panel", width: 30, height: 15 })
+  container.add(panel)
 
-  // Root component
-  handler.on("keypress", (key: KeyEvent) => {
-    eventLog.push({ component: "root", stopped: key.propagationStopped })
+  const button = new TestRenderable(renderer, { id: "button", width: 10, height: 3 })
+  panel.add(button)
+  await renderOnce()
+  button.focus()
+
+  const eventLog: Array<{ component: string; phase: string }> = []
+
+  // Capture phase listeners
+  renderer.root.addEventListener("keypress", () => eventLog.push({ component: "root", phase: "capture" }), {
+    capture: true,
+  })
+  container.addEventListener("keypress", () => eventLog.push({ component: "container", phase: "capture" }), {
+    capture: true,
   })
 
-  // Child component (registered as internal, represents focused element)
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    eventLog.push({ component: "child", stopped: key.propagationStopped })
-
-    // Child handles space key and stops propagation
-    if (key.name === "space") {
-      key.stopPropagation()
+  // Target/bubble phase listeners
+  button.addEventListener("keypress", (event) => {
+    eventLog.push({ component: "button", phase: "target" })
+    if ((event as KeyEvent).name === "space") {
+      event.stopPropagation()
     }
   })
+  panel.addEventListener("keypress", () => eventLog.push({ component: "panel", phase: "bubble" }))
+  container.addEventListener("keypress", () => eventLog.push({ component: "container", phase: "bubble" }))
+  renderer.root.addEventListener("keypress", () => eventLog.push({ component: "root", phase: "bubble" }))
 
-  // Another internal handler (sibling or parent)
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    eventLog.push({ component: "sibling", stopped: key.propagationStopped })
-  })
-
-  handler.processInput(" ") // Space key
+  pressKey(" ") // Space
 
   expect(eventLog).toEqual([
-    { component: "root", stopped: false },
-    { component: "child", stopped: false },
-    // sibling doesn't run because child stopped propagation
+    { component: "root", phase: "capture" },
+    { component: "container", phase: "capture" },
+    { component: "button", phase: "target" },
+    // Space stopped propagation — no bubble beyond target
   ])
-  expect(eventLog).toHaveLength(2)
+})
+
+test("Integration - once listener fires once then is removed", async () => {
+  const child = new TestRenderable(renderer, { id: "child", width: 10, height: 5 })
+  renderer.root.add(child)
+  await renderOnce()
+  child.focus()
+
+  let callCount = 0
+  child.addEventListener(
+    "keypress",
+    () => {
+      callCount++
+    },
+    { once: true },
+  )
+
+  pressKey("a")
+  pressKey("b")
+
+  expect(callCount).toBe(1)
 })

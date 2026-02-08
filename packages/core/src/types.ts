@@ -2,7 +2,7 @@ import type { RGBA } from "./lib/RGBA"
 import type { EventEmitter } from "events"
 import type { Selection } from "./lib/selection"
 import type { Renderable } from "./Renderable"
-import type { InternalKeyHandler, KeyHandler } from "./lib/KeyHandler"
+import type { KeyHandler } from "./lib/KeyHandler"
 
 export const TextAttributes = {
   NONE: 0,
@@ -76,7 +76,6 @@ export interface RenderContext extends EventEmitter {
   unregisterLifecyclePass: (renderable: Renderable) => void
   getLifecyclePasses: () => Set<Renderable>
   keyInput: KeyHandler
-  _internalKeyInput: InternalKeyHandler
   clearSelection: () => void
   startSelection: (renderable: Renderable, x: number, y: number) => void
   updateSelection: (

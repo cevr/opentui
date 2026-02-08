@@ -1,147 +1,171 @@
-import { test, expect, beforeEach } from "bun:test"
-import { InternalKeyHandler, KeyEvent } from "./KeyHandler"
+import { test, expect, beforeEach, afterEach } from "bun:test"
+import { KeyEvent } from "./KeyHandler"
+import { createTestRenderer, type TestRenderer } from "../testing/test-renderer"
+import { Renderable, type RenderableOptions } from "../Renderable"
+import type { RenderContext } from "../types"
 
-function createKeyHandler(useKittyKeyboard: boolean = false): InternalKeyHandler {
-  return new InternalKeyHandler(useKittyKeyboard)
+class TestRenderable extends Renderable {
+  _focusable = true
+  constructor(ctx: RenderContext, options: RenderableOptions) {
+    super(ctx, options)
+  }
 }
 
-test("stopPropagation - stops subsequent global handlers", () => {
-  const handler = createKeyHandler()
+let renderer: TestRenderer
+let renderOnce: () => Promise<void>
+
+beforeEach(async () => {
+  ;({ renderer, renderOnce } = await createTestRenderer({}))
+})
+
+afterEach(() => {
+  renderer.destroy()
+})
+
+function pressKey(key: string = "a") {
+  ;(renderer as any)._keyHandler.processInput(key)
+}
+
+test("stopPropagation - capture listener stops bubble listeners", async () => {
+  const child = new TestRenderable(renderer, { id: "child", width: 10, height: 5 })
+  renderer.root.add(child)
+  await renderOnce()
+  child.focus()
 
   const callOrder: string[] = []
 
-  handler.on("keypress", (key: KeyEvent) => {
-    callOrder.push("global1")
-    key.stopPropagation()
+  renderer.root.addEventListener(
+    "keypress",
+    (event) => {
+      callOrder.push("root-capture")
+      event.stopPropagation()
+    },
+    { capture: true },
+  )
+
+  child.addEventListener("keypress", () => {
+    callOrder.push("child-bubble")
   })
 
-  handler.on("keypress", (key: KeyEvent) => {
-    callOrder.push("global2")
-  })
+  pressKey()
 
-  handler.processInput("a")
-
-  expect(callOrder).toEqual(["global1"])
+  expect(callOrder).toEqual(["root-capture"])
 })
 
-test("stopPropagation - stops internal handlers from running", () => {
-  const handler = createKeyHandler()
+test("stopPropagation - bubble listener stops parent bubble listeners", async () => {
+  const parent = new TestRenderable(renderer, { id: "parent", width: 20, height: 10 })
+  renderer.root.add(parent)
+
+  const child = new TestRenderable(renderer, { id: "child", width: 10, height: 5 })
+  parent.add(child)
+  await renderOnce()
+  child.focus()
 
   const callOrder: string[] = []
 
-  handler.on("keypress", (key: KeyEvent) => {
-    callOrder.push("global")
-    key.stopPropagation()
+  child.addEventListener("keypress", (event) => {
+    callOrder.push("child-bubble")
+    event.stopPropagation()
   })
 
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    callOrder.push("internal")
+  parent.addEventListener("keypress", () => {
+    callOrder.push("parent-bubble")
   })
 
-  handler.processInput("a")
+  renderer.root.addEventListener("keypress", () => {
+    callOrder.push("root-bubble")
+  })
 
-  expect(callOrder).toEqual(["global"])
+  pressKey()
+
+  // Capture phase runs (root → parent → child), then bubble stops at child
+  expect(callOrder).toEqual(["child-bubble"])
 })
 
-test("stopPropagation - internal handler can stop other internal handlers", () => {
-  const handler = createKeyHandler()
-
-  const callOrder: string[] = []
-
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    callOrder.push("internal1")
-    key.stopPropagation()
-  })
-
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    callOrder.push("internal2")
-  })
-
-  handler.processInput("a")
-
-  expect(callOrder).toEqual(["internal1"])
-})
-
-test("stopPropagation - does not affect preventDefault", () => {
-  const handler = createKeyHandler()
+test("stopPropagation - does not affect preventDefault", async () => {
+  const child = new TestRenderable(renderer, { id: "child", width: 10, height: 5 })
+  renderer.root.add(child)
+  await renderOnce()
+  child.focus()
 
   let stoppedPropagation = false
   let preventedDefault = false
 
-  handler.on("keypress", (key: KeyEvent) => {
-    key.stopPropagation()
-    key.preventDefault()
-    stoppedPropagation = key.propagationStopped
-    preventedDefault = key.defaultPrevented
+  child.addEventListener("keypress", (event) => {
+    event.stopPropagation()
+    event.preventDefault()
+    stoppedPropagation = event.propagationStopped
+    preventedDefault = event.defaultPrevented
   })
 
-  handler.processInput("a")
+  pressKey()
 
   expect(stoppedPropagation).toBe(true)
   expect(preventedDefault).toBe(true)
 })
 
-test("stopPropagation - without calling it, all handlers run", () => {
-  const handler = createKeyHandler()
+test("stopPropagation - without calling it, full capture/bubble chain runs", async () => {
+  const parent = new TestRenderable(renderer, { id: "parent", width: 20, height: 10 })
+  renderer.root.add(parent)
+
+  const child = new TestRenderable(renderer, { id: "child", width: 10, height: 5 })
+  parent.add(child)
+  await renderOnce()
+  child.focus()
 
   const callOrder: string[] = []
 
-  handler.on("keypress", (key: KeyEvent) => {
-    callOrder.push("global1")
-  })
+  renderer.root.addEventListener("keypress", () => callOrder.push("root-capture"), { capture: true })
+  parent.addEventListener("keypress", () => callOrder.push("parent-capture"), { capture: true })
+  child.addEventListener("keypress", () => callOrder.push("child-target"))
+  parent.addEventListener("keypress", () => callOrder.push("parent-bubble"))
+  renderer.root.addEventListener("keypress", () => callOrder.push("root-bubble"))
 
-  handler.on("keypress", (key: KeyEvent) => {
-    callOrder.push("global2")
-  })
+  pressKey()
 
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    callOrder.push("internal1")
-  })
-
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    callOrder.push("internal2")
-  })
-
-  handler.processInput("a")
-
-  expect(callOrder).toEqual(["global1", "global2", "internal1", "internal2"])
+  expect(callOrder).toEqual(["root-capture", "parent-capture", "child-target", "parent-bubble", "root-bubble"])
 })
 
-test("stopPropagation - paste events support stopPropagation", () => {
-  const handler = createKeyHandler()
+test("stopPropagation - paste events support stopPropagation", async () => {
+  const child = new TestRenderable(renderer, { id: "child", width: 10, height: 5 })
+  renderer.root.add(child)
+  await renderOnce()
+  child.focus()
 
   const callOrder: string[] = []
 
-  handler.on("paste", (event) => {
-    callOrder.push("global")
+  child.addEventListener("paste", (event) => {
+    callOrder.push("child")
     event.stopPropagation()
   })
 
-  handler.onInternal("paste", (event) => {
-    callOrder.push("internal")
+  renderer.root.addEventListener("paste", () => {
+    callOrder.push("root-bubble")
   })
 
-  handler.processPaste("hello")
+  ;(renderer as any)._keyHandler.processPaste("hello")
 
-  expect(callOrder).toEqual(["global"])
+  expect(callOrder).toEqual(["child"])
 })
 
-test("stopPropagation - works with keyrelease events", () => {
-  const handler = createKeyHandler(true) // Enable kitty for release events
+test("stopPropagation - works with keyrelease events", async () => {
+  const child = new TestRenderable(renderer, { id: "child", width: 10, height: 5 })
+  renderer.root.add(child)
+  await renderOnce()
+  child.focus()
 
   const callOrder: string[] = []
 
-  handler.on("keyrelease", (key: KeyEvent) => {
-    callOrder.push("global")
-    key.stopPropagation()
+  child.addEventListener("keyrelease", (event) => {
+    callOrder.push("child")
+    event.stopPropagation()
   })
 
-  handler.onInternal("keyrelease", (key: KeyEvent) => {
-    callOrder.push("internal")
+  renderer.root.addEventListener("keyrelease", () => {
+    callOrder.push("root-bubble")
   })
 
-  // Emit a release event directly since we need kitty protocol
-  handler.emit(
+  ;(renderer as any)._keyHandler.emit(
     "keyrelease",
     new KeyEvent({
       name: "a",
@@ -157,122 +181,116 @@ test("stopPropagation - works with keyrelease events", () => {
     }),
   )
 
-  expect(callOrder).toEqual(["global"])
+  expect(callOrder).toEqual(["child"])
 })
 
-test("stopPropagation - error in handler does not affect propagation stopped state", () => {
-  const handler = createKeyHandler()
+test("stopPropagation - error in handler does not affect propagation stopped state", async () => {
+  const child = new TestRenderable(renderer, { id: "child", width: 10, height: 5 })
+  renderer.root.add(child)
+  await renderOnce()
+  child.focus()
 
   const callOrder: string[] = []
 
-  handler.on("keypress", (key: KeyEvent) => {
-    callOrder.push("global1")
-    key.stopPropagation()
-    throw new Error("Test error")
+  renderer.root.addEventListener(
+    "keypress",
+    (event) => {
+      callOrder.push("root-capture")
+      event.stopPropagation()
+      throw new Error("Test error")
+    },
+    { capture: true },
+  )
+
+  child.addEventListener("keypress", () => {
+    callOrder.push("child-bubble")
   })
 
-  handler.on("keypress", (key: KeyEvent) => {
-    callOrder.push("global2")
-  })
+  // dispatchEvent catches errors in handlers
+  pressKey()
 
-  expect(() => handler.processInput("a")).not.toThrow()
-
-  expect(callOrder).toEqual(["global1"])
+  expect(callOrder).toEqual(["root-capture"])
 })
 
-test("stopPropagation - modal scenario: ESC key handled by modal, stops at modal", () => {
-  const handler = createKeyHandler()
+test("stopPropagation - scope isolation: child stops events from reaching parent", async () => {
+  const scope = new TestRenderable(renderer, { id: "scope", width: 20, height: 10 })
+  renderer.root.add(scope)
+
+  const input = new TestRenderable(renderer, { id: "input", width: 10, height: 5 })
+  scope.add(input)
+  await renderOnce()
+  input.focus()
 
   const callOrder: string[] = []
-  let modalClosed = false
   let appHandledEsc = false
 
-  // Modal handler (internal, should be focused element) - runs BEFORE app handler
-  // In a real app, the focused modal element would use onInternal
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    if (key.name === "escape") {
-      callOrder.push("modal")
-      modalClosed = true
-      key.stopPropagation()
-    }
+  // Scope acts as an isolation boundary (like trapFocus would)
+  scope.addEventListener("keypress", (event) => {
+    callOrder.push("scope")
+    event.stopPropagation()
   })
 
-  // App-level global ESC handler (should NOT run if modal stops propagation)
-  handler.on("keypress", (key: KeyEvent) => {
-    if (key.name === "escape") {
-      callOrder.push("app")
-      appHandledEsc = true
-    }
+  // App-level handler on root (bubble phase)
+  renderer.root.addEventListener("keypress", () => {
+    callOrder.push("app")
+    appHandledEsc = true
   })
 
-  handler.processInput("\x1b")
+  pressKey("\x1b") // ESC
 
-  // Global handlers run before internal handlers
-  // So app handler runs first, but modal can still stop further internal handlers
-  expect(callOrder).toEqual(["app", "modal"])
-  expect(modalClosed).toBe(true)
-  expect(appHandledEsc).toBe(true)
-})
-
-test("stopPropagation - modal scenario: global modal handler prevents app handler", () => {
-  const handler = createKeyHandler()
-
-  const callOrder: string[] = []
-  let modalClosed = false
-  let appHandledEsc = false
-
-  // Modal as a global handler (registered first) - to stop before app handler
-  handler.on("keypress", (key: KeyEvent) => {
-    if (key.name === "escape") {
-      callOrder.push("modal")
-      modalClosed = true
-      key.stopPropagation()
-    }
-  })
-
-  // App-level ESC handler (should NOT run due to stopPropagation)
-  handler.on("keypress", (key: KeyEvent) => {
-    if (key.name === "escape") {
-      callOrder.push("app")
-      appHandledEsc = true
-    }
-  })
-
-  handler.processInput("\x1b")
-
-  // When modal is registered as a global handler first, it can stop the app handler
-  expect(callOrder).toEqual(["modal"])
-  expect(modalClosed).toBe(true)
+  // Event bubbles from input → scope (stops here), never reaches root bubble
+  expect(callOrder).toEqual(["scope"])
   expect(appHandledEsc).toBe(false)
 })
 
-test("stopPropagation - event flow without stopPropagation shows order", () => {
-  const handler = createKeyHandler()
+test("stopPropagation - global capture still fires before scope isolation", async () => {
+  const scope = new TestRenderable(renderer, { id: "scope", width: 20, height: 10 })
+  renderer.root.add(scope)
 
-  const events: string[] = []
+  const input = new TestRenderable(renderer, { id: "input", width: 10, height: 5 })
+  scope.add(input)
+  await renderOnce()
+  input.focus()
 
-  handler.on("keypress", (key: KeyEvent) => {
-    events.push("global1")
-    expect(key.propagationStopped).toBe(false)
+  const callOrder: string[] = []
+
+  // Global handler (becomes capture on root) — fires first
+  renderer.keyInput.on("keypress", () => {
+    callOrder.push("global-capture")
   })
 
-  handler.on("keypress", (key: KeyEvent) => {
-    events.push("global2")
-    expect(key.propagationStopped).toBe(false)
+  // Scope isolation (bubble phase)
+  scope.addEventListener("keypress", (event) => {
+    callOrder.push("scope-bubble")
+    event.stopPropagation()
   })
 
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    events.push("internal1")
-    expect(key.propagationStopped).toBe(false)
+  pressKey()
+
+  // Global capture fires before scope's bubble handler
+  expect(callOrder).toEqual(["global-capture", "scope-bubble"])
+
+  renderer.keyInput.removeAllListeners("keypress")
+})
+
+test("stopImmediatePropagation - stops other listeners on same node", async () => {
+  const child = new TestRenderable(renderer, { id: "child", width: 10, height: 5 })
+  renderer.root.add(child)
+  await renderOnce()
+  child.focus()
+
+  const callOrder: string[] = []
+
+  child.addEventListener("keypress", (event) => {
+    callOrder.push("handler1")
+    event.stopImmediatePropagation()
   })
 
-  handler.onInternal("keypress", (key: KeyEvent) => {
-    events.push("internal2")
-    expect(key.propagationStopped).toBe(false)
+  child.addEventListener("keypress", () => {
+    callOrder.push("handler2")
   })
 
-  handler.processInput("a")
+  pressKey()
 
-  // Verify execution order: global handlers first, then internal handlers
-  expect(events).toEqual(["global1", "global2", "internal1", "internal2"])
+  expect(callOrder).toEqual(["handler1"])
 })

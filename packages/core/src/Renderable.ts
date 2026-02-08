@@ -2,6 +2,8 @@ import { EventEmitter } from "events"
 import Yoga, { Direction, Display, Edge, FlexDirection, type Config, type Node as YogaNode } from "yoga-layout"
 import { OptimizedBuffer } from "./buffer"
 import type { KeyEvent, PasteEvent } from "./lib/KeyHandler"
+import type { TUIEvent } from "./lib/event"
+import type { EventListenerEntry } from "./lib/event-dispatch"
 import type { MouseEventType } from "./lib/parse.mouse"
 import type { Selection } from "./lib/selection"
 import {
@@ -216,8 +218,10 @@ export abstract class Renderable extends BaseRenderable {
 
   protected _focusable: boolean = false
   protected _focused: boolean = false
-  protected keypressHandler: ((key: KeyEvent) => void) | null = null
-  protected pasteHandler: ((event: PasteEvent) => void) | null = null
+  protected keypressHandler: ((event: TUIEvent) => void) | null = null
+  protected pasteHandler: ((event: TUIEvent) => void) | null = null
+
+  private _eventListeners: Map<string, EventListenerEntry[]> = new Map()
 
   private _live: boolean = false
   protected _liveCount: number = 0
@@ -381,28 +385,28 @@ export abstract class Renderable extends BaseRenderable {
     this._focused = true
     this.requestRender()
 
-    this.keypressHandler = (key: KeyEvent) => {
-      if (this._isDestroyed) return
+    this.keypressHandler = (event: TUIEvent) => {
+      if (this._isDestroyed || event.defaultPrevented) return
+      const key = event as KeyEvent
       this._keyListeners["down"]?.(key)
-      // Check again after user listener - it might have destroyed the renderable
       if (this._isDestroyed) return
-      if (!key.defaultPrevented && this.handleKeyPress) {
+      if (!event.defaultPrevented && this.handleKeyPress) {
         this.handleKeyPress(key)
       }
     }
 
-    this.pasteHandler = (event: PasteEvent) => {
-      if (this._isDestroyed) return
-      this._pasteListener?.call(this, event)
-      // Check again after user listener - it might have destroyed the renderable
+    this.pasteHandler = (event: TUIEvent) => {
+      if (this._isDestroyed || event.defaultPrevented) return
+      const paste = event as PasteEvent
+      this._pasteListener?.call(this, paste)
       if (this._isDestroyed) return
       if (!event.defaultPrevented && this.handlePaste) {
-        this.handlePaste(event)
+        this.handlePaste(paste)
       }
     }
 
-    this.ctx._internalKeyInput.onInternal("keypress", this.keypressHandler)
-    this.ctx._internalKeyInput.onInternal("paste", this.pasteHandler)
+    this.addEventListener("keypress", this.keypressHandler)
+    this.addEventListener("paste", this.pasteHandler)
     this.emit(RenderableEvents.FOCUSED)
   }
 
@@ -413,12 +417,12 @@ export abstract class Renderable extends BaseRenderable {
     this.requestRender()
 
     if (this.keypressHandler) {
-      this.ctx._internalKeyInput.offInternal("keypress", this.keypressHandler)
+      this.removeEventListener("keypress", this.keypressHandler)
       this.keypressHandler = null
     }
 
     if (this.pasteHandler) {
-      this.ctx._internalKeyInput.offInternal("paste", this.pasteHandler)
+      this.removeEventListener("paste", this.pasteHandler)
       this.pasteHandler = null
     }
 
@@ -427,6 +431,46 @@ export abstract class Renderable extends BaseRenderable {
 
   public get focused(): boolean {
     return this._focused
+  }
+
+  public addEventListener(
+    type: string,
+    handler: (event: TUIEvent) => void,
+    options?: { capture?: boolean; once?: boolean },
+  ): void {
+    const entry: EventListenerEntry = {
+      handler,
+      capture: options?.capture ?? false,
+      once: options?.once ?? false,
+    }
+    let listeners = this._eventListeners.get(type)
+    if (!listeners) {
+      listeners = []
+      this._eventListeners.set(type, listeners)
+    }
+    listeners.push(entry)
+  }
+
+  public removeEventListener(
+    type: string,
+    handler: (event: TUIEvent) => void,
+    options?: { capture?: boolean },
+  ): void {
+    const listeners = this._eventListeners.get(type)
+    if (!listeners) return
+    const capture = options?.capture ?? false
+    const idx = listeners.findIndex((e) => e.handler === handler && e.capture === capture)
+    if (idx !== -1) {
+      listeners.splice(idx, 1)
+      if (listeners.length === 0) {
+        this._eventListeners.delete(type)
+      }
+    }
+  }
+
+  /** @internal */
+  public _getEventListeners(type: string): EventListenerEntry[] | undefined {
+    return this._eventListeners.get(type)
   }
 
   public get live(): boolean {
@@ -1404,6 +1448,7 @@ export abstract class Renderable extends BaseRenderable {
 
     this.blur()
     this.removeAllListeners()
+    this._eventListeners.clear()
 
     this.destroySelf()
 
