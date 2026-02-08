@@ -3,8 +3,9 @@ import Yoga, { Direction, Display, Edge, FlexDirection, type Config, type Node a
 import { OptimizedBuffer } from "./buffer"
 import type { KeyEvent, PasteEvent } from "./lib/KeyHandler"
 import type { TUIEvent } from "./lib/event"
-import type { EventListenerEntry } from "./lib/event-dispatch"
+import { dispatchEvent, type EventListenerEntry } from "./lib/event-dispatch"
 import type { MouseEventType } from "./lib/parse.mouse"
+import { MouseEvent } from "./lib/mouse-event"
 import type { Selection } from "./lib/selection"
 import {
   parseAlign,
@@ -22,7 +23,6 @@ import {
   type WrapString,
 } from "./lib/yoga.options"
 import { maybeMakeRenderable, type VNode } from "./renderables/composition/vnode"
-import type { MouseEvent } from "./renderer"
 import type { RenderContext } from "./types"
 import {
   validateOptions,
@@ -227,8 +227,16 @@ export abstract class Renderable extends BaseRenderable {
   protected _liveCount: number = 0
 
   private _sizeChangeListener: (() => void) | undefined = undefined
-  private _mouseListener: ((event: MouseEvent) => void) | null = null
-  private _mouseListeners: Partial<Record<MouseEventType, (event: MouseEvent) => void>> = {}
+  private _onMouseHandlers: Map<string, (event: TUIEvent) => void> | null = null
+  private _onMouseDownHandler: ((event: TUIEvent) => void) | null = null
+  private _onMouseUpHandler: ((event: TUIEvent) => void) | null = null
+  private _onMouseMoveHandler: ((event: TUIEvent) => void) | null = null
+  private _onMouseDragHandler: ((event: TUIEvent) => void) | null = null
+  private _onMouseDragEndHandler: ((event: TUIEvent) => void) | null = null
+  private _onMouseDropHandler: ((event: TUIEvent) => void) | null = null
+  private _onMouseOverHandler: ((event: TUIEvent) => void) | null = null
+  private _onMouseOutHandler: ((event: TUIEvent) => void) | null = null
+  private _onMouseScrollHandler: ((event: TUIEvent) => void) | null = null
   private _pasteListener: ((event: PasteEvent) => void) | undefined = undefined
   private _keyListeners: Partial<Record<"down", (key: KeyEvent) => void>> = {}
 
@@ -1475,68 +1483,79 @@ export abstract class Renderable extends BaseRenderable {
   }
 
   public processMouseEvent(event: MouseEvent): void {
-    this._mouseListener?.call(this, event)
-    this._mouseListeners[event.type]?.call(this, event)
-    this.onMouseEvent(event)
-
-    if (this.parent && !event.propagationStopped) {
-      this.parent.processMouseEvent(event)
-    }
-  }
-
-  protected onMouseEvent(event: MouseEvent): void {
-    // Default implementation: do nothing
-    // Override this method to provide custom event handling
+    if (!event.target) event.target = this
+    dispatchEvent(event)
   }
 
   public set onMouse(handler: ((event: MouseEvent) => void) | undefined) {
-    if (handler) this._mouseListener = handler
-    else this._mouseListener = null
+    if (this._onMouseHandlers) {
+      for (const [type, wrapper] of this._onMouseHandlers) {
+        this.removeEventListener(type, wrapper)
+      }
+      this._onMouseHandlers = null
+    }
+    if (handler) {
+      const mouseTypes: MouseEventType[] = ["down", "up", "move", "drag", "drag-end", "drop", "over", "out", "scroll"]
+      this._onMouseHandlers = new Map()
+      for (const type of mouseTypes) {
+        const wrapper = (event: TUIEvent) => handler.call(this, event as MouseEvent)
+        this._onMouseHandlers.set(type, wrapper)
+        this.addEventListener(type, wrapper)
+      }
+    }
   }
 
   public set onMouseDown(handler: ((event: MouseEvent) => void) | undefined) {
-    if (handler) this._mouseListeners["down"] = handler
-    else delete this._mouseListeners["down"]
+    this._setMouseHandler("down", "_onMouseDownHandler", handler)
   }
 
   public set onMouseUp(handler: ((event: MouseEvent) => void) | undefined) {
-    if (handler) this._mouseListeners["up"] = handler
-    else delete this._mouseListeners["up"]
+    this._setMouseHandler("up", "_onMouseUpHandler", handler)
   }
 
   public set onMouseMove(handler: ((event: MouseEvent) => void) | undefined) {
-    if (handler) this._mouseListeners["move"] = handler
-    else delete this._mouseListeners["move"]
+    this._setMouseHandler("move", "_onMouseMoveHandler", handler)
   }
 
   public set onMouseDrag(handler: ((event: MouseEvent) => void) | undefined) {
-    if (handler) this._mouseListeners["drag"] = handler
-    else delete this._mouseListeners["drag"]
+    this._setMouseHandler("drag", "_onMouseDragHandler", handler)
   }
 
   public set onMouseDragEnd(handler: ((event: MouseEvent) => void) | undefined) {
-    if (handler) this._mouseListeners["drag-end"] = handler
-    else delete this._mouseListeners["drag-end"]
+    this._setMouseHandler("drag-end", "_onMouseDragEndHandler", handler)
   }
 
   public set onMouseDrop(handler: ((event: MouseEvent) => void) | undefined) {
-    if (handler) this._mouseListeners["drop"] = handler
-    else delete this._mouseListeners["drop"]
+    this._setMouseHandler("drop", "_onMouseDropHandler", handler)
   }
 
   public set onMouseOver(handler: ((event: MouseEvent) => void) | undefined) {
-    if (handler) this._mouseListeners["over"] = handler
-    else delete this._mouseListeners["over"]
+    this._setMouseHandler("over", "_onMouseOverHandler", handler)
   }
 
   public set onMouseOut(handler: ((event: MouseEvent) => void) | undefined) {
-    if (handler) this._mouseListeners["out"] = handler
-    else delete this._mouseListeners["out"]
+    this._setMouseHandler("out", "_onMouseOutHandler", handler)
   }
 
   public set onMouseScroll(handler: ((event: MouseEvent) => void) | undefined) {
-    if (handler) this._mouseListeners["scroll"] = handler
-    else delete this._mouseListeners["scroll"]
+    this._setMouseHandler("scroll", "_onMouseScrollHandler", handler)
+  }
+
+  private _setMouseHandler(
+    type: MouseEventType,
+    field: `_onMouse${string}Handler`,
+    handler: ((event: MouseEvent) => void) | undefined,
+  ): void {
+    const existing = (this as any)[field] as ((event: TUIEvent) => void) | null
+    if (existing) {
+      this.removeEventListener(type, existing)
+      ;(this as any)[field] = null
+    }
+    if (handler) {
+      const wrapper = (event: TUIEvent) => handler.call(this, event as MouseEvent)
+      ;(this as any)[field] = wrapper
+      this.addEventListener(type, wrapper)
+    }
   }
 
   public set onPaste(handler: ((event: PasteEvent) => void) | undefined) {

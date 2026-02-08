@@ -2,7 +2,8 @@ import { type KeyEvent } from "../lib"
 import { getObjectsInViewport } from "../lib/objects-in-viewport"
 import { LinearScrollAccel, MacOSScrollAccel, type ScrollAcceleration } from "../lib/scroll-acceleration"
 import type { Renderable, RenderableOptions } from "../Renderable"
-import type { MouseEvent } from "../renderer"
+import type { TUIEvent } from "../lib/event"
+import type { MouseEvent } from "../lib/mouse-event"
 import type { RenderContext } from "../types"
 import { BoxRenderable, type BoxOptions } from "./Box"
 import type { VNode } from "./composition/vnode"
@@ -352,6 +353,15 @@ export class ScrollBoxRenderable extends BoxRenderable {
       }
     }
     this._ctx.on("selection", this.selectionListener)
+
+    this.addEventListener("scroll", (e: TUIEvent) => this.handleScrollEvent(e as MouseEvent))
+    this.addEventListener("drag", (e: TUIEvent) => {
+      const event = e as MouseEvent
+      if (event.isDragging) this.updateAutoScroll(event.x, event.y)
+    })
+    this.addEventListener("up", (e: TUIEvent) => {
+      this.stopAutoScroll()
+    })
   }
 
   protected onUpdate(deltaTime: number): void {
@@ -418,59 +428,51 @@ export class ScrollBoxRenderable extends BoxRenderable {
     return this.content.getChildren()
   }
 
-  protected onMouseEvent(event: MouseEvent): void {
-    if (event.type === "scroll") {
-      let dir = event.scroll?.direction
-      if (event.modifiers.shift)
-        dir = dir === "up" ? "left" : dir === "down" ? "right" : dir === "right" ? "down" : "up"
+  private handleScrollEvent(event: MouseEvent): void {
+    let dir = event.scroll?.direction
+    if (event.modifiers.shift)
+      dir = dir === "up" ? "left" : dir === "down" ? "right" : dir === "right" ? "down" : "up"
 
-      const baseDelta = event.scroll?.delta ?? 0
-      const now = Date.now()
-      const multiplier = this.scrollAccel.tick(now)
-      const scrollAmount = baseDelta * multiplier
+    const baseDelta = event.scroll?.delta ?? 0
+    const now = Date.now()
+    const multiplier = this.scrollAccel.tick(now)
+    const scrollAmount = baseDelta * multiplier
 
-      if (dir === "up") {
-        this.scrollAccumulatorY -= scrollAmount
-        const integerScroll = Math.trunc(this.scrollAccumulatorY)
-        if (integerScroll !== 0) {
-          this.scrollTop += integerScroll
-          this.scrollAccumulatorY -= integerScroll
-        }
-      } else if (dir === "down") {
-        this.scrollAccumulatorY += scrollAmount
-        const integerScroll = Math.trunc(this.scrollAccumulatorY)
-        if (integerScroll !== 0) {
-          this.scrollTop += integerScroll
-          this.scrollAccumulatorY -= integerScroll
-        }
-      } else if (dir === "left") {
-        this.scrollAccumulatorX -= scrollAmount
-        const integerScroll = Math.trunc(this.scrollAccumulatorX)
-        if (integerScroll !== 0) {
-          this.scrollLeft += integerScroll
-          this.scrollAccumulatorX -= integerScroll
-        }
-      } else if (dir === "right") {
-        this.scrollAccumulatorX += scrollAmount
-        const integerScroll = Math.trunc(this.scrollAccumulatorX)
-        if (integerScroll !== 0) {
-          this.scrollLeft += integerScroll
-          this.scrollAccumulatorX -= integerScroll
-        }
+    if (dir === "up") {
+      this.scrollAccumulatorY -= scrollAmount
+      const integerScroll = Math.trunc(this.scrollAccumulatorY)
+      if (integerScroll !== 0) {
+        this.scrollTop += integerScroll
+        this.scrollAccumulatorY -= integerScroll
       }
-
-      // Only mark as manual scroll if there's meaningful scrollable content
-      const maxScrollTop = Math.max(0, this.scrollHeight - this.viewport.height)
-      const maxScrollLeft = Math.max(0, this.scrollWidth - this.viewport.width)
-      if (maxScrollTop > 1 || maxScrollLeft > 1) {
-        this._hasManualScroll = true
+    } else if (dir === "down") {
+      this.scrollAccumulatorY += scrollAmount
+      const integerScroll = Math.trunc(this.scrollAccumulatorY)
+      if (integerScroll !== 0) {
+        this.scrollTop += integerScroll
+        this.scrollAccumulatorY -= integerScroll
+      }
+    } else if (dir === "left") {
+      this.scrollAccumulatorX -= scrollAmount
+      const integerScroll = Math.trunc(this.scrollAccumulatorX)
+      if (integerScroll !== 0) {
+        this.scrollLeft += integerScroll
+        this.scrollAccumulatorX -= integerScroll
+      }
+    } else if (dir === "right") {
+      this.scrollAccumulatorX += scrollAmount
+      const integerScroll = Math.trunc(this.scrollAccumulatorX)
+      if (integerScroll !== 0) {
+        this.scrollLeft += integerScroll
+        this.scrollAccumulatorX -= integerScroll
       }
     }
 
-    if (event.type === "drag" && event.isDragging) {
-      this.updateAutoScroll(event.x, event.y)
-    } else if (event.type === "up") {
-      this.stopAutoScroll()
+    // Only mark as manual scroll if there's meaningful scrollable content
+    const maxScrollTop = Math.max(0, this.scrollHeight - this.viewport.height)
+    const maxScrollLeft = Math.max(0, this.scrollWidth - this.viewport.width)
+    if (maxScrollTop > 1 || maxScrollLeft > 1) {
+      this._hasManualScroll = true
     }
   }
 

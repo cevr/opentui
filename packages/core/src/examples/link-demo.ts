@@ -47,40 +47,41 @@ class DraggableBox extends BoxRenderable {
       padding: 1,
       flexDirection: "column",
     })
-  }
 
-  protected onMouseEvent(event: MouseEvent): void {
-    if (!dragModeEnabled) return
+    this.addEventListener("down", (e) => {
+      if (!dragModeEnabled) return
+      const event = e as MouseEvent
+      this.isDragging = true
+      this.dragOffsetX = event.x - this.x
+      this.dragOffsetY = event.y - this.y
+      this.zIndex = nextZIndex++
+      event.stopPropagation()
+    })
 
-    switch (event.type) {
-      case "down":
-        this.isDragging = true
-        this.dragOffsetX = event.x - this.x
-        this.dragOffsetY = event.y - this.y
-        this.zIndex = nextZIndex++
+    this.addEventListener("drag-end", (e) => {
+      if (!dragModeEnabled) return
+      const event = e as MouseEvent
+      if (this.isDragging) {
+        this.isDragging = false
         event.stopPropagation()
-        break
+      }
+    })
 
-      case "drag-end":
-        if (this.isDragging) {
-          this.isDragging = false
-          event.stopPropagation()
-        }
-        break
+    this.addEventListener("drag", (e) => {
+      if (!dragModeEnabled) return
+      const event = e as MouseEvent
+      if (this.isDragging) {
+        const newX = event.x - this.dragOffsetX
+        const newY = event.y - this.dragOffsetY
 
-      case "drag":
-        if (this.isDragging) {
-          const newX = event.x - this.dragOffsetX
-          const newY = event.y - this.dragOffsetY
+        this.x = Math.max(0, Math.min(newX, this._ctx.width - this.width))
+        this.y = Math.max(0, Math.min(newY, this._ctx.height - this.height))
 
-          this.x = Math.max(0, Math.min(newX, this._ctx.width - this.width))
-          this.y = Math.max(0, Math.min(newY, this._ctx.height - this.height))
-
-          event.stopPropagation()
-        }
-        break
-    }
+        event.stopPropagation()
+      }
+    })
   }
+
 }
 
 function getHeaderContent(): ReturnType<typeof t> {

@@ -101,12 +101,8 @@ export abstract class TextBufferRenderable extends Renderable implements LineInf
     this.textBufferView.setTruncate(this._truncate)
 
     this.updateTextInfo()
-  }
 
-  protected onMouseEvent(event: any): void {
-    if (event.type === "scroll") {
-      this.handleScroll(event)
-    }
+    this.addEventListener("scroll", (e) => this.handleScroll(e as any))
   }
 
   protected handleScroll(event: any): void {

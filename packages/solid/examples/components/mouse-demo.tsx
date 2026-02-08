@@ -41,6 +41,36 @@ class DraggableTransparentBox extends BoxRenderable {
       border: true,
     })
     this.alphaPercentage = Math.round(bg.a * 100)
+
+    this.addEventListener("down", (e) => {
+      const event = e as MouseEvent
+      this.isDragging = true
+      this.dragOffsetX = event.x - this.x
+      this.dragOffsetY = event.y - this.y
+      this.zIndex = nextZIndex++
+      event.stopPropagation()
+    })
+
+    this.addEventListener("drag-end", (e) => {
+      const event = e as MouseEvent
+      if (this.isDragging) {
+        this.isDragging = false
+        event.stopPropagation()
+      }
+    })
+
+    this.addEventListener("drag", (e) => {
+      const event = e as MouseEvent
+      if (this.isDragging) {
+        this.x = event.x - this.dragOffsetX
+        this.y = event.y - this.dragOffsetY
+
+        this.x = Math.max(0, Math.min(this.x, this._ctx.width - this.width))
+        this.y = Math.max(4, Math.min(this.y, this._ctx.height - this.height))
+
+        event.stopPropagation()
+      }
+    })
   }
 
   normalizeCoordinates(x: number, y: number): { x: number; y: number } {
@@ -76,36 +106,6 @@ class DraggableTransparentBox extends BoxRenderable {
     // buffer.drawText(`${nms.x}-${nms.y}`, 1, 2, RGBA.fromHex("#ffffff"), RGBA.fromHex("#000000"));
   }
 
-  protected override onMouseEvent(event: MouseEvent): void {
-    switch (event.type) {
-      case "down":
-        this.isDragging = true
-        this.dragOffsetX = event.x - this.x
-        this.dragOffsetY = event.y - this.y
-        this.zIndex = nextZIndex++
-        event.stopPropagation()
-        break
-
-      case "drag-end":
-        if (this.isDragging) {
-          this.isDragging = false
-          event.stopPropagation()
-        }
-        break
-
-      case "drag":
-        if (this.isDragging) {
-          this.x = event.x - this.dragOffsetX
-          this.y = event.y - this.dragOffsetY
-
-          this.x = Math.max(0, Math.min(this.x, this._ctx.width - this.width))
-          this.y = Math.max(4, Math.min(this.y, this._ctx.height - this.height))
-
-          event.stopPropagation()
-        }
-        break
-    }
-  }
 }
 
 export default function MouseDraggableScene() {

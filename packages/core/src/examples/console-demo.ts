@@ -67,6 +67,31 @@ class ConsoleButton extends BoxRenderable {
     this.originalBg = color
     this.hoverBg = RGBA.fromValues(color.r * 1.2, color.g * 1.2, color.b * 1.2, color.a)
     this.pressBg = RGBA.fromValues(color.r * 0.8, color.g * 0.8, color.b * 0.8, color.a)
+
+    this.addEventListener("down", (e) => {
+      const event = e as MouseEvent
+      this.isPressed = true
+      this.lastClickTime = Date.now()
+      buttonCounters[this.logType as keyof typeof buttonCounters]++
+
+      this.triggerConsoleLog()
+      event.stopPropagation()
+    })
+
+    this.addEventListener("up", (e) => {
+      const event = e as MouseEvent
+      this.isPressed = false
+      event.stopPropagation()
+    })
+
+    this.addEventListener("over", () => {
+      this.isHovered = true
+    })
+
+    this.addEventListener("out", () => {
+      this.isHovered = false
+      this.isPressed = false
+    })
   }
 
   protected renderSelf(buffer: OptimizedBuffer): void {
@@ -90,33 +115,6 @@ class ConsoleButton extends BoxRenderable {
 
       buffer.setCell(centerX - 1, centerY, "✦", sparkleColor, this.backgroundColor)
       buffer.setCell(centerX + 1, centerY, "✦", sparkleColor, this.backgroundColor)
-    }
-  }
-
-  protected onMouseEvent(event: MouseEvent): void {
-    switch (event.type) {
-      case "down":
-        this.isPressed = true
-        this.lastClickTime = Date.now()
-        buttonCounters[this.logType as keyof typeof buttonCounters]++
-
-        this.triggerConsoleLog()
-        event.stopPropagation()
-        break
-
-      case "up":
-        this.isPressed = false
-        event.stopPropagation()
-        break
-
-      case "over":
-        this.isHovered = true
-        break
-
-      case "out":
-        this.isHovered = false
-        this.isPressed = false
-        break
     }
   }
 

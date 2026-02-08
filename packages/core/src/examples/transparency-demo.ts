@@ -44,6 +44,36 @@ class DraggableTransparentBox extends BoxRenderable {
       top: y,
     })
     this.alphaPercentage = Math.round(bg.a * 100)
+
+    this.addEventListener("down", (e) => {
+      const event = e as MouseEvent
+      this.isDragging = true
+      this.dragOffsetX = event.x - this.x
+      this.dragOffsetY = event.y - this.y
+      this.zIndex = nextZIndex++
+      event.stopPropagation()
+    })
+
+    this.addEventListener("drag-end", (e) => {
+      const event = e as MouseEvent
+      if (this.isDragging) {
+        this.isDragging = false
+        event.stopPropagation()
+      }
+    })
+
+    this.addEventListener("drag", (e) => {
+      const event = e as MouseEvent
+      if (this.isDragging) {
+        const newX = event.x - this.dragOffsetX
+        const newY = event.y - this.dragOffsetY
+
+        this.x = Math.max(0, Math.min(newX, this._ctx.width - this.width))
+        this.y = Math.max(4, Math.min(newY, this._ctx.height - this.height))
+
+        event.stopPropagation()
+      }
+    })
   }
 
   protected renderSelf(buffer: OptimizedBuffer): void {
@@ -56,36 +86,6 @@ class DraggableTransparentBox extends BoxRenderable {
     buffer.drawText(alphaText, centerX, centerY, RGBA.fromInts(255, 255, 255, 220))
   }
 
-  protected onMouseEvent(event: MouseEvent): void {
-    switch (event.type) {
-      case "down":
-        this.isDragging = true
-        this.dragOffsetX = event.x - this.x
-        this.dragOffsetY = event.y - this.y
-        this.zIndex = nextZIndex++
-        event.stopPropagation()
-        break
-
-      case "drag-end":
-        if (this.isDragging) {
-          this.isDragging = false
-          event.stopPropagation()
-        }
-        break
-
-      case "drag":
-        if (this.isDragging) {
-          const newX = event.x - this.dragOffsetX
-          const newY = event.y - this.dragOffsetY
-
-          this.x = Math.max(0, Math.min(newX, this._ctx.width - this.width))
-          this.y = Math.max(4, Math.min(newY, this._ctx.height - this.height))
-
-          event.stopPropagation()
-        }
-        break
-    }
-  }
 }
 
 export function run(renderer: CliRenderer): void {

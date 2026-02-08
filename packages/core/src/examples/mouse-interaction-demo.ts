@@ -226,6 +226,44 @@ class MouseInteractionFrameBuffer extends FrameBufferRenderable {
       height: renderer.terminalHeight,
       zIndex: 0,
     })
+
+    this.addEventListener("move", (e) => {
+      if (e.propagationStopped) return
+      const event = e as MouseEvent
+      const cellKey = `${event.x},${event.y}`
+      this.trailCells.set(cellKey, {
+        x: event.x,
+        y: event.y,
+        timestamp: Date.now(),
+        isDrag: false,
+      })
+      this.requestRender()
+    })
+
+    this.addEventListener("drag", (e) => {
+      if (e.propagationStopped) return
+      const event = e as MouseEvent
+      const cellKey = `${event.x},${event.y}`
+      this.trailCells.set(cellKey, {
+        x: event.x,
+        y: event.y,
+        timestamp: Date.now(),
+        isDrag: true,
+      })
+      this.requestRender()
+    })
+
+    this.addEventListener("down", (e) => {
+      if (e.propagationStopped) return
+      const event = e as MouseEvent
+      const cellKey = `${event.x},${event.y}`
+      if (this.activatedCells.has(cellKey)) {
+        this.activatedCells.delete(cellKey)
+      } else {
+        this.activatedCells.add(cellKey)
+      }
+      this.requestRender()
+    })
   }
 
   protected renderSelf(buffer: OptimizedBuffer): void {
@@ -269,43 +307,6 @@ class MouseInteractionFrameBuffer extends FrameBufferRenderable {
     }
 
     super.renderSelf(buffer)
-  }
-
-  protected onMouseEvent(event: MouseEvent): void {
-    if (event.propagationStopped) return
-
-    const cellKey = `${event.x},${event.y}`
-
-    switch (event.type) {
-      case "move":
-        this.trailCells.set(cellKey, {
-          x: event.x,
-          y: event.y,
-          timestamp: Date.now(),
-          isDrag: false,
-        })
-        this.requestRender()
-        break
-
-      case "drag":
-        this.trailCells.set(cellKey, {
-          x: event.x,
-          y: event.y,
-          timestamp: Date.now(),
-          isDrag: true,
-        })
-        this.requestRender()
-        break
-
-      case "down":
-        if (this.activatedCells.has(cellKey)) {
-          this.activatedCells.delete(cellKey)
-        } else {
-          this.activatedCells.add(cellKey)
-        }
-        this.requestRender()
-        break
-    }
   }
 
   public clearState(): void {

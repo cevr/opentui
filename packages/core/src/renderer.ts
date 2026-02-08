@@ -13,6 +13,7 @@ import { OptimizedBuffer } from "./buffer"
 import { resolveRenderLib, type RenderLib } from "./zig"
 import { TerminalConsole, type ConsoleOptions, capture } from "./console"
 import { MouseParser, type MouseEventType, type RawMouseEvent, type ScrollInfo } from "./lib/parse.mouse"
+import { MouseEvent } from "./lib/mouse-event"
 import { Selection } from "./lib/selection"
 import { Clipboard, type ClipboardTarget } from "./lib/clipboard"
 import { EventEmitter } from "events"
@@ -177,51 +178,7 @@ export function buildKittyKeyboardFlags(config: KittyKeyboardOptions | null | un
   return flags
 }
 
-export class MouseEvent {
-  public readonly type: MouseEventType
-  public readonly button: number
-  public readonly x: number
-  public readonly y: number
-  public readonly source?: Renderable
-  public readonly modifiers: {
-    shift: boolean
-    alt: boolean
-    ctrl: boolean
-  }
-  public readonly scroll?: ScrollInfo
-  public readonly target: Renderable | null
-  public readonly isDragging?: boolean
-  private _propagationStopped: boolean = false
-  private _defaultPrevented: boolean = false
-
-  public get propagationStopped(): boolean {
-    return this._propagationStopped
-  }
-
-  public get defaultPrevented(): boolean {
-    return this._defaultPrevented
-  }
-
-  constructor(target: Renderable | null, attributes: RawMouseEvent & { source?: Renderable; isDragging?: boolean }) {
-    this.target = target
-    this.type = attributes.type
-    this.button = attributes.button
-    this.x = attributes.x
-    this.y = attributes.y
-    this.modifiers = attributes.modifiers
-    this.scroll = attributes.scroll
-    this.source = attributes.source
-    this.isDragging = attributes.isDragging
-  }
-
-  public stopPropagation(): void {
-    this._propagationStopped = true
-  }
-
-  public preventDefault(): void {
-    this._defaultPrevented = true
-  }
-}
+export { MouseEvent } from "./lib/mouse-event"
 
 export enum MouseButton {
   LEFT = 0,

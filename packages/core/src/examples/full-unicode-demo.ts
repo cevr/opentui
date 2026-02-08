@@ -48,30 +48,31 @@ class DraggableGraphemeBox extends FrameBufferRenderable {
       this.frameBuffer.drawText(line, 1, row, fg, bg)
       row += 1
     }
-  }
 
-  protected onMouseEvent(event: MouseEvent): void {
-    switch (event.type) {
-      case "down":
-        this.isDragging = true
-        this.dragOffsetX = event.x - this.x
-        this.dragOffsetY = event.y - this.y
+    this.addEventListener("down", (e) => {
+      const event = e as MouseEvent
+      this.isDragging = true
+      this.dragOffsetX = event.x - this.x
+      this.dragOffsetY = event.y - this.y
+      event.stopPropagation()
+    })
+
+    this.addEventListener("drag", (e) => {
+      const event = e as MouseEvent
+      if (this.isDragging) {
+        this.x = event.x - this.dragOffsetX
+        this.y = event.y - this.dragOffsetY
         event.stopPropagation()
-        break
-      case "drag":
-        if (this.isDragging) {
-          this.x = event.x - this.dragOffsetX
-          this.y = event.y - this.dragOffsetY
-          event.stopPropagation()
-        }
-        break
-      case "drag-end":
-        if (this.isDragging) {
-          this.isDragging = false
-          event.stopPropagation()
-        }
-        break
-    }
+      }
+    })
+
+    this.addEventListener("drag-end", (e) => {
+      const event = e as MouseEvent
+      if (this.isDragging) {
+        this.isDragging = false
+        event.stopPropagation()
+      }
+    })
   }
 }
 
@@ -112,30 +113,31 @@ ${underline("Complex:")} a̐éö̲  Z͑͗͛̒͘a̴͈͚̐̓l̷͓̱͉g̶̙̗̓͘
     this.content = content
     this.fg = RGBA.fromInts(255, 255, 255, 255)
     this.bg = RGBA.fromInts(0, 0, 0, 0)
-  }
 
-  protected onMouseEvent(event: MouseEvent): void {
-    switch (event.type) {
-      case "down":
-        this.isDragging = true
-        this.dragOffsetX = event.x - this.x
-        this.dragOffsetY = event.y - this.y
+    this.addEventListener("down", (e) => {
+      const event = e as MouseEvent
+      this.isDragging = true
+      this.dragOffsetX = event.x - this.x
+      this.dragOffsetY = event.y - this.y
+      event.stopPropagation()
+    })
+
+    this.addEventListener("drag", (e) => {
+      const event = e as MouseEvent
+      if (this.isDragging) {
+        this.x = event.x - this.dragOffsetX
+        this.y = event.y - this.dragOffsetY
         event.stopPropagation()
-        break
-      case "drag":
-        if (this.isDragging) {
-          this.x = event.x - this.dragOffsetX
-          this.y = event.y - this.dragOffsetY
-          event.stopPropagation()
-        }
-        break
-      case "drag-end":
-        if (this.isDragging) {
-          this.isDragging = false
-          event.stopPropagation()
-        }
-        break
-    }
+      }
+    })
+
+    this.addEventListener("drag-end", (e) => {
+      const event = e as MouseEvent
+      if (this.isDragging) {
+        this.isDragging = false
+        event.stopPropagation()
+      }
+    })
   }
 }
 

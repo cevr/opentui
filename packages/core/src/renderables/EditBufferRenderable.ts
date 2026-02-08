@@ -129,6 +129,8 @@ export abstract class EditBufferRenderable extends Renderable implements LineInf
 
     this.setupMeasureFunc()
     this.setupEventListeners(options)
+
+    this.addEventListener("scroll", (e) => this.handleScroll(e as any))
   }
 
   public get lineInfo(): LineInfo {
@@ -350,12 +352,6 @@ export abstract class EditBufferRenderable extends Renderable implements LineInf
 
   set scrollSpeed(value: number) {
     this._scrollSpeed = Math.max(0, value)
-  }
-
-  protected override onMouseEvent(event: any): void {
-    if (event.type === "scroll") {
-      this.handleScroll(event)
-    }
   }
 
   protected handleScroll(event: any): void {

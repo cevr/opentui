@@ -3,7 +3,8 @@ import { createTestRenderer, MouseButtons, type MockMouse, type TestRenderer } f
 import { Renderable, type RenderableOptions } from "../Renderable"
 import type { RenderContext } from "../types"
 import type { Selection } from "../lib/selection"
-import type { MouseEvent } from "../renderer"
+import { MouseEvent } from "../lib/mouse-event"
+import { TUIEvent, EventPhase } from "../lib/event"
 
 class TestRenderable extends Renderable {
   public selectionActive = false
@@ -1160,6 +1161,211 @@ describe("renderer handleMouseData split height", () => {
       await Bun.sleep(10)
 
       expect(sequences.length).toBeGreaterThan(beforeSequences)
+    } finally {
+      renderer.destroy()
+    }
+  })
+})
+
+describe("MouseEvent extends TUIEvent", () => {
+  test("MouseEvent is instance of TUIEvent", () => {
+    const event = new MouseEvent(null, {
+      type: "down",
+      button: 0,
+      x: 5,
+      y: 5,
+      modifiers: { shift: false, alt: false, ctrl: false },
+    })
+    expect(event).toBeInstanceOf(TUIEvent)
+    expect(event.type).toBe("down")
+    expect(event.propagationStopped).toBe(false)
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  test("stopImmediatePropagation stops same-node handlers", () => {
+    const event = new MouseEvent(null, {
+      type: "down",
+      button: 0,
+      x: 0,
+      y: 0,
+      modifiers: { shift: false, alt: false, ctrl: false },
+    })
+    event.stopImmediatePropagation()
+    expect(event.propagationStopped).toBe(true)
+    expect(event._immediateStopped).toBe(true)
+  })
+})
+
+describe("mouse event capture/bubble dispatch", () => {
+  let renderer: TestRenderer
+  let mockMouse: MockMouse
+  let renderOnce: () => Promise<void>
+
+  beforeEach(async () => {
+    ;({ renderer, mockMouse, renderOnce } = await createTestRenderer({ width: 40, height: 20 }))
+  })
+
+  test("capture-phase listener on parent fires before target bubble handler", async () => {
+    try {
+      const parent = new TestRenderable(renderer, {
+        id: "parent",
+        position: "absolute",
+        left: 0,
+        top: 0,
+        width: 20,
+        height: 10,
+      })
+      const child = new TestRenderable(renderer, {
+        id: "child",
+        position: "absolute",
+        left: 1,
+        top: 1,
+        width: 6,
+        height: 4,
+      })
+      renderer.root.add(parent)
+      parent.add(child)
+      await renderOnce()
+
+      const order: string[] = []
+      parent.addEventListener("down", () => order.push("parent:capture"), { capture: true })
+      child.onMouseDown = () => order.push("child:bubble")
+      parent.addEventListener("down", () => order.push("parent:bubble"))
+
+      await mockMouse.click(child.x + 1, child.y + 1)
+
+      expect(order).toEqual(["parent:capture", "child:bubble", "parent:bubble"])
+    } finally {
+      renderer.destroy()
+    }
+  })
+
+  test("stopPropagation in capture prevents bubble", async () => {
+    try {
+      const parent = new TestRenderable(renderer, {
+        id: "parent",
+        position: "absolute",
+        left: 0,
+        top: 0,
+        width: 20,
+        height: 10,
+      })
+      const child = new TestRenderable(renderer, {
+        id: "child",
+        position: "absolute",
+        left: 1,
+        top: 1,
+        width: 6,
+        height: 4,
+      })
+      renderer.root.add(parent)
+      parent.add(child)
+      await renderOnce()
+
+      let childHandled = false
+      parent.addEventListener(
+        "down",
+        (e) => {
+          e.stopPropagation()
+        },
+        { capture: true },
+      )
+      child.onMouseDown = () => {
+        childHandled = true
+      }
+
+      await mockMouse.click(child.x + 1, child.y + 1)
+
+      expect(childHandled).toBe(false)
+    } finally {
+      renderer.destroy()
+    }
+  })
+
+  test("stopImmediatePropagation stops remaining handlers on same node", async () => {
+    try {
+      const target = new TestRenderable(renderer, {
+        id: "target",
+        position: "absolute",
+        left: 2,
+        top: 2,
+        width: 6,
+        height: 4,
+      })
+      renderer.root.add(target)
+      await renderOnce()
+
+      const order: string[] = []
+      target.addEventListener("down", (e) => {
+        order.push("first")
+        e.stopImmediatePropagation()
+      })
+      target.addEventListener("down", () => order.push("second"))
+
+      await mockMouse.click(target.x + 1, target.y + 1)
+
+      expect(order).toEqual(["first"])
+    } finally {
+      renderer.destroy()
+    }
+  })
+
+  test("scroll event dispatches through capture/bubble correctly", async () => {
+    try {
+      const parent = new TestRenderable(renderer, {
+        id: "parent",
+        position: "absolute",
+        left: 0,
+        top: 0,
+        width: 20,
+        height: 10,
+      })
+      const child = new TestRenderable(renderer, {
+        id: "child",
+        position: "absolute",
+        left: 1,
+        top: 1,
+        width: 8,
+        height: 4,
+      })
+      renderer.root.add(parent)
+      parent.add(child)
+      await renderOnce()
+
+      const order: string[] = []
+      parent.addEventListener("scroll", () => order.push("parent:capture"), { capture: true })
+      child.onMouseScroll = () => order.push("child:bubble")
+      parent.addEventListener("scroll", () => order.push("parent:bubble"))
+
+      await mockMouse.scroll(child.x + 1, child.y + 1, "down")
+
+      expect(order).toEqual(["parent:capture", "child:bubble", "parent:bubble"])
+    } finally {
+      renderer.destroy()
+    }
+  })
+
+  test("property handler and addEventListener coexist on same node", async () => {
+    try {
+      const target = new TestRenderable(renderer, {
+        id: "target",
+        position: "absolute",
+        left: 2,
+        top: 2,
+        width: 6,
+        height: 4,
+      })
+      renderer.root.add(target)
+      await renderOnce()
+
+      const order: string[] = []
+      target.addEventListener("down", () => order.push("addEventListener"))
+      target.onMouseDown = () => order.push("property")
+
+      await mockMouse.click(target.x + 1, target.y + 1)
+
+      expect(order).toContain("addEventListener")
+      expect(order).toContain("property")
     } finally {
       renderer.destroy()
     }
